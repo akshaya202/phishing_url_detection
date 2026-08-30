@@ -1,21 +1,28 @@
 import os
 import sys
+import json
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 from urllib.parse import urlparse
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 import pandas as pd
 
+try:
+    from supabase import create_client
+except ImportError:
+    create_client = None
+
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from backend.database import Database
+from backend.database import Database, SUPABASE_CLIENT, USE_SUPABASE
 from ml.phishing_model import DATASET_PATH, bootstrap_initial_model, load_latest_model, predict_label_and_reason
 
 app = FastAPI(title='Dynamic Phishing URL Detection System')
@@ -43,6 +50,15 @@ def _safe_url(url: str):
     if not parsed.netloc:
         raise HTTPException(status_code=400, detail='Please enter a valid URL.')
     return trimmed
+
+
+def _get_domain(url: str) -> str:
+    """Extract domain from URL"""
+    try:
+        parsed = urlparse(url if url.startswith(('http://', 'https://')) else f'https://{url}')
+        return parsed.netloc.lower()
+    except:
+        return ''
 
 
 def _create_token(user):
@@ -144,8 +160,38 @@ def scan_url(payload: dict, credentials: HTTPAuthorizationCredentials = Depends(
     risk_value = float(probability)
     user = _decode_token(credentials) if credentials else None
 
+    # Save to database with complete data
     if user:
-        db.save_scan(user['id'], url, label, float(probability), risk_value, reason)
+        from ml.phishing_model import _extract_features
+        
+        domain = _get_domain(url)
+        features = _extract_features(url)
+        
+        # Determine severity based on risk
+        severity = 'high' if risk_value >= 0.8 else ('medium' if risk_value >= 0.5 else 'low')
+        
+        scan_id = db.save_scan(
+            user['id'], 
+            url, 
+            label, 
+            float(probability), 
+            risk_value, 
+            reason,
+            domain=domain,
+            severity=severity,
+            detection_reasons={'ml_classification': label, 'reason': reason},
+            extracted_features={'feature_count': len(features), 'vector': features if isinstance(features, dict) else {}},
+            model_version=_get_model_version(),
+        )
+        
+        # Create alert if high risk
+        if risk_value >= 0.7 and label.lower() == 'phishing':
+            db.create_alert(
+                user['id'],
+                scan_id,
+                'high',
+                f'HIGH RISK: Phishing URL detected - {domain}'
+            )
 
     return {
         'url': url,
@@ -167,7 +213,9 @@ def get_history(credentials: HTTPAuthorizationCredentials = Depends(security)):
 def submit_report(payload: dict, credentials: HTTPAuthorizationCredentials = Depends(security)):
     user = _decode_token(credentials)
     url = _safe_url(payload.get('url'))
-    report_id = db.save_report(url, user['id'])
+    reason = str(payload.get('reason') or 'Other').strip() or 'Other'
+    description = str(payload.get('description') or '').strip()
+    report_id = db.save_report(url, user['id'], reason=reason, description=description)
     return {'id': report_id, 'status': 'pending', 'message': 'Your report has been submitted for admin verification.'}
 
 
@@ -223,6 +271,163 @@ def admin_metrics(credentials: HTTPAuthorizationCredentials = Depends(security))
     if not metadata:
         return {'accuracy': 0, 'precision': 0, 'recall': 0, 'f1': 0, 'confusion_matrix': [[0, 0], [0, 0]]}
     return {**metadata}
+
+
+# ============================================================================
+# NEW SUPABASE-INTEGRATED ENDPOINTS
+# ============================================================================
+
+@app.get('/api/scan/{scan_id}')
+def get_scan_detail(scan_id: str, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get detailed information about a specific scan"""
+    user = _require_user(credentials)
+    scan = db.get_scan_detail(scan_id)
+    
+    if not scan:
+        raise HTTPException(status_code=404, detail='Scan not found.')
+    
+    # Check authorization
+    if scan['user_id'] != user['id'] and user['role'] != 'admin':
+        raise HTTPException(status_code=403, detail='Not authorized to view this scan.')
+    
+    # Get threat intelligence
+    threats = db.get_threat_intelligence(scan_id)
+    scan['threats'] = threats
+    
+    return {'scan': scan}
+
+
+@app.get('/api/scans')
+def get_scans(skip: int = 0, limit: int = 25, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get user's scans with pagination"""
+    user = _require_user(credentials)
+    scans = db.get_user_scans(user['id'], limit=limit)
+    return {'scans': scans, 'total': len(scans)}
+
+
+@app.get('/api/threats')
+def get_threats(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get threat intelligence (user's or admin's)"""
+    user = _require_user(credentials)
+    
+    if user['role'] == 'admin':
+        threats = db.get_all_threats()
+    else:
+        # Get threats from user's scans
+        scans = db.get_user_scans(user['id'], limit=100)
+        threats = []
+        for scan in scans:
+            threats.extend(db.get_threat_intelligence(scan['id']))
+    
+    return {'threats': threats}
+
+
+@app.get('/api/alerts')
+def get_alerts(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get user's alerts"""
+    user = _require_user(credentials)
+    alerts = db.get_user_alerts(user['id'])
+    return {'alerts': alerts}
+
+
+@app.patch('/api/alerts/{alert_id}')
+def update_alert(alert_id: str, payload: dict, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Mark alert as read"""
+    user = _require_user(credentials)
+    
+    status = (payload.get('status') or '').strip().lower()
+    if status not in {'read', 'unread'}:
+        raise HTTPException(status_code=400, detail='Status must be "read" or "unread".')
+    
+    result = db.mark_alert_as_read(alert_id) if status == 'read' else None
+    return {'alert': result, 'status': status}
+
+
+@app.get('/api/analytics')
+def get_analytics(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get analytics and statistics"""
+    user = _require_user(credentials)
+    
+    if user['role'] == 'admin':
+        # Admin gets system-wide stats
+        scans = db.get_all_scans(limit=1000)
+        alerts = db.get_all_alerts(limit=500)
+    else:
+        # User gets their own stats
+        scans = db.get_user_scans(user['id'], limit=500)
+        alerts = db.get_user_alerts(user['id'], limit=500)
+    
+    # Calculate statistics
+    prediction_dist = {'safe': 0, 'suspicious': 0, 'phishing': 0}
+    severity_dist = {'low': 0, 'medium': 0, 'high': 0}
+    alert_dist = {'unread': 0, 'read': 0}
+    
+    for scan in scans:
+        pred = scan['prediction'].lower() if scan.get('prediction') else 'safe'
+        if pred in prediction_dist:
+            prediction_dist[pred] += 1
+        
+        severity = scan.get('severity', 'low')
+        if severity in severity_dist:
+            severity_dist[severity] += 1
+    
+    for alert in alerts:
+        status = alert.get('status', 'unread')
+        if status in alert_dist:
+            alert_dist[status] += 1
+    
+    return {
+        'total_scans': len(scans),
+        'total_alerts': len(alerts),
+        'prediction_distribution': prediction_dist,
+        'severity_distribution': severity_dist,
+        'alert_distribution': alert_dist,
+        'recent_scans': scans[:10],
+    }
+
+
+# ============================================================================
+# ADMIN ENDPOINTS
+# ============================================================================
+
+@app.get('/api/admin/users')
+def list_users(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get all users (admin only)"""
+    _require_admin(credentials)
+    users = db.get_all_users()
+    return {'users': users}
+
+
+@app.get('/api/admin/logs')
+def get_logs(skip: int = 0, limit: int = 100, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get API logs (admin only)"""
+    _require_admin(credentials)
+    logs = db.get_api_logs(limit=limit)
+    return {'logs': logs}
+
+
+@app.get('/api/admin/scans')
+def admin_get_scans(limit: int = 100, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get all scans (admin only)"""
+    _require_admin(credentials)
+    scans = db.get_all_scans(limit=limit)
+    return {'scans': scans}
+
+
+@app.get('/api/admin/threats')
+def admin_get_threats(limit: int = 100, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get all threat intelligence (admin only)"""
+    _require_admin(credentials)
+    threats = db.get_all_threats(limit=limit)
+    return {'threats': threats}
+
+
+@app.get('/api/admin/alerts')
+def admin_get_alerts(limit: int = 100, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get all alerts (admin only)"""
+    _require_admin(credentials)
+    alerts = db.get_all_alerts(limit=limit)
+    return {'alerts': alerts}
 
 
 @app.post('/api/admin/retrain')
