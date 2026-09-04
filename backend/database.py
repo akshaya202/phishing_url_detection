@@ -13,9 +13,9 @@ except Exception:  # pragma: no cover
 DB_PATH = Path(__file__).resolve().parent.parent / 'models' / 'app_data.db'
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-SUPABASE_URL = os.getenv('SUPABASE_URL')
-SUPABASE_ANON_KEY = os.getenv('SUPABASE_ANON_KEY')
-SUPABASE_SERVICE_ROLE_KEY = os.getenv('SUPABASE_SERVICE_ROLE_KEY')
+SUPABASE_URL = os.getenv('https://uhdoraevgbryfwfletep.supabase.co')
+SUPABASE_ANON_KEY = os.getenv('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVoZG9yYWV2Z2JyeWZ3ZmxldGVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1MDE2NjQsImV4cCI6MjEwNDA3NzY2NH0.x6vqtRgSeRpVtX853wjgq43CP0WYcwCubTgLagepNvk')
+SUPABASE_SERVICE_ROLE_KEY = os.getenv('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVoZG9yYWV2Z2JyeWZ3ZmxldGVwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4ODUwMTY2NCwiZXhwIjoyMTA0MDc3NjY0fQ.kZGcd5_Mkp60fwunoCj8RFTiulVXEyBG9oOrZo7qo20')
 
 # Use service role key for backend operations (server-side only)
 SUPABASE_KEY = SUPABASE_SERVICE_ROLE_KEY or SUPABASE_ANON_KEY

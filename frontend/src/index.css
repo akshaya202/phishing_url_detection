@@ -39,6 +39,56 @@ body {
   @apply rounded-2xl border border-slate-700/80 bg-slate-900/65 shadow-soft backdrop-blur-sm;
 }
 
+.section-kicker {
+  @apply text-[0.68rem] font-semibold uppercase tracking-[0.2em] text-cyan-300/80;
+}
+
+.status-dot {
+  @apply h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)];
+}
+
+.metric-card,
+.feature-card {
+  @apply transition duration-300 ease-out hover:-translate-y-1 hover:border-cyan-400/30 hover:bg-slate-900/85;
+}
+
+.metric-icon,
+.feature-icon {
+  @apply inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border;
+}
+
+.metric-icon--cyan {
+  @apply border-cyan-400/20 bg-cyan-400/10 text-cyan-300;
+}
+
+.metric-icon--rose {
+  @apply border-rose-400/20 bg-rose-400/10 text-rose-300;
+}
+
+.metric-icon--emerald {
+  @apply border-emerald-400/20 bg-emerald-400/10 text-emerald-300;
+}
+
+.metric-icon--amber {
+  @apply border-amber-400/20 bg-amber-400/10 text-amber-300;
+}
+
+.feature-icon {
+  @apply border-cyan-400/20 bg-cyan-400/10 text-cyan-300;
+}
+
+.check-row {
+  @apply flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-950/45 px-3 py-2.5 text-sm text-slate-300 transition hover:border-cyan-400/20 hover:text-white;
+}
+
+.check-row svg {
+  @apply shrink-0 text-cyan-300;
+}
+
+.report-panel {
+  background: linear-gradient(110deg, rgba(15, 23, 42, 0.78), rgba(8, 47, 73, 0.34));
+}
+
 .input {
   @apply w-full rounded-xl border border-slate-700 bg-slate-950/80 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/30;
 }

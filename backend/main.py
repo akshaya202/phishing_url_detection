@@ -23,7 +23,8 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from backend.database import Database, SUPABASE_CLIENT, USE_SUPABASE
-from ml.phishing_model import DATASET_PATH, bootstrap_initial_model, load_latest_model, predict_label_and_reason
+from ml.dataset_pipeline import load_all_datasets, split_training_and_external
+from ml.phishing_model import DATASETS_DIR, bootstrap_initial_model, load_latest_model, predict_label_and_reason
 
 app = FastAPI(title='Dynamic Phishing URL Detection System')
 
@@ -105,7 +106,6 @@ def startup_event():
                 metadata['confusion_matrix'],
             )
     except Exception:
-        dataset = pd.read_csv(DATASET_PATH)
         model, metadata = bootstrap_initial_model()
         db.save_model_version(
             metadata['version'],
@@ -433,20 +433,25 @@ def admin_get_alerts(limit: int = 100, credentials: HTTPAuthorizationCredentials
 @app.post('/api/admin/retrain')
 def admin_retrain(credentials: HTTPAuthorizationCredentials = Depends(security)):
     _require_admin(credentials)
-    dataset = pd.read_csv(DATASET_PATH)
+    combined, reports = load_all_datasets(DATASETS_DIR)
+    training, external, reports = split_training_and_external(combined, reports)
     verified_reports = db.get_verified_reports()
 
     if verified_reports:
         verified_df = pd.DataFrame([
             {'url': item['url'], 'verdict': 1} for item in verified_reports
         ])
-        combined = pd.concat([dataset, verified_df], ignore_index=True)
-    else:
-        combined = dataset.copy()
+        training = pd.concat([training, verified_df], ignore_index=True)
 
     from ml.phishing_model import train_and_evaluate_model, get_next_model_version, save_model_version
 
-    model, metrics = train_and_evaluate_model(combined)
+    model, metrics = train_and_evaluate_model(training, external)
+    metrics['dataset_reports'] = reports
+    metrics['combined_records'] = int(len(combined))
+    metrics['combined_class_distribution'] = {
+        'legitimate': int((combined['verdict'] == 0).sum()),
+        'phishing': int((combined['verdict'] == 1).sum()),
+    }
     version = get_next_model_version()
     metadata = save_model_version(model, metrics, version)
     db.save_model_version(metadata['version'], metadata['accuracy'], metadata['precision'], metadata['recall'], metadata['f1'], metadata['confusion_matrix'])

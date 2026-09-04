@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Route, Routes, Navigate } from 'react-router-dom';
 import axios from 'axios';
-import { Activity, AlertTriangle, BarChart3, Check, CheckCircle2, FileText, Lock, Shield, ShieldAlert, ShieldCheck, Settings, TriangleAlert, UserCircle2, ChartNoAxesCombined, X } from 'lucide-react';
+import { Activity, AlertTriangle, BarChart3, Bot, Check, CheckCircle2, FileText, Globe2, KeyRound, Lock, Network, ScanLine, SearchCheck, Shield, ShieldAlert, ShieldCheck, Settings, TriangleAlert, UserCircle2, ChartNoAxesCombined, X } from 'lucide-react';
 import { AreaChart, Area, BarChart, Bar, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 const API_BASE = 'http://localhost:8000';
@@ -129,19 +129,20 @@ const getRiskColor = (risk) => {
 };
 
 function App() {
-  const [token, setToken] = useState(localStorage.getItem('token') || '');
-  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user') || 'null'));
+  const [token, setToken] = useState(() => localStorage.getItem('token') || sessionStorage.getItem('token') || '');
+  const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user') || sessionStorage.getItem('user') || 'null'));
   const [scanResult, setScanResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [authMode, setAuthMode] = useState('login');
   const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [rememberMe, setRememberMe] = useState(() => localStorage.getItem('rememberMe') !== 'false');
   const [reportUrl, setReportUrl] = useState('');
   const [reportReason, setReportReason] = useState('Phishing');
   const [reportDescription, setReportDescription] = useState('');
   const [scanInput, setScanInput] = useState('');
   const [filterStatus, setFilterStatus] = useState('All Status');
   const [resultAnimationKey, setResultAnimationKey] = useState(0);
-  const [history, setHistory] = useState(SAMPLE_HISTORY);
+  const [history, setHistory] = useState([]);
   const [stats, setStats] = useState({
     counts: { legitimate: 0, phishing: 0, suspicious: 0 },
     reports: { total: 0, pending: 0, verified: 0 },
@@ -156,6 +157,9 @@ function App() {
   const clearSession = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    localStorage.removeItem('rememberMe');
+    sessionStorage.removeItem('token');
+    sessionStorage.removeItem('user');
     setToken('');
     setUser(null);
     setScanResult(null);
@@ -176,8 +180,8 @@ function App() {
   };
 
   useEffect(() => {
-    const storedToken = localStorage.getItem('token') || '';
-    const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
+    const storedToken = localStorage.getItem('token') || sessionStorage.getItem('token') || '';
+    const storedUser = JSON.parse(localStorage.getItem('user') || sessionStorage.getItem('user') || 'null');
 
     if (!storedToken || !storedUser) {
       clearSession();
@@ -189,12 +193,20 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (token) localStorage.setItem('token', token); else localStorage.removeItem('token');
-  }, [token]);
+    localStorage.removeItem('token');
+    sessionStorage.removeItem('token');
+    if (token) (rememberMe ? localStorage : sessionStorage).setItem('token', token);
+  }, [token, rememberMe]);
 
   useEffect(() => {
-    if (user) localStorage.setItem('user', JSON.stringify(user)); else localStorage.removeItem('user');
-  }, [user]);
+    localStorage.removeItem('user');
+    sessionStorage.removeItem('user');
+    if (user) (rememberMe ? localStorage : sessionStorage).setItem('user', JSON.stringify(user));
+  }, [user, rememberMe]);
+
+  useEffect(() => {
+    localStorage.setItem('rememberMe', String(rememberMe));
+  }, [rememberMe]);
 
   useEffect(() => {
     if (token) {
@@ -235,6 +247,7 @@ function App() {
       const res = await axios.post(`${API_BASE}${endpoint}`, payload);
       setToken(res.data.token);
       setUser(res.data.user);
+      setRememberMe(authMode === 'register' ? true : rememberMe);
       setAuthForm({ name: '', email: '', password: '' });
     } catch (error) {
       alert(error.response?.data?.detail || 'Authentication failed');
@@ -345,6 +358,7 @@ function App() {
   const totalScanned = history.length;
   const flaggedPhishing = history.filter((h) => normalizePrediction(h.prediction) === 'phishing').length;
   const verifiedSafe = history.filter((h) => normalizePrediction(h.prediction) === 'safe').length;
+  const threatsBlocked = history.filter((h) => ['phishing', 'suspicious'].includes(normalizePrediction(h.prediction))).length;
 
   const filteredHistory = useMemo(() => {
     if (filterStatus === 'All Status') return history;
@@ -384,9 +398,9 @@ function App() {
           <div className="flex items-center gap-3">
             {user ? (
               <>
-                <button className="btn-secondary flex items-center gap-2">
+                <button className="btn-secondary flex items-center gap-2" aria-label={`Signed in as ${user.name || 'User'}`}>
                   <UserCircle2 size={16} />
-                  <span className="hidden md:inline">{user.name || user.email}</span>
+                  <span className="hidden max-w-32 truncate md:inline">{user.name || 'User'}</span>
                 </button>
                 <button className="rounded-xl border border-slate-700 bg-slate-900 p-2 text-slate-300 transition hover:border-slate-500 hover:text-white">
                   <Settings size={18} />
@@ -405,8 +419,7 @@ function App() {
           <Route path="/" element={
             isAuthenticated ? (
               <div className="space-y-8">
-                <section className="grid gap-6 lg:grid-cols-[1.25fr_0.75fr]">
-                  <div className="card p-6 md:p-8">
+                <section className="card p-6 md:p-8">
                     <div className="mb-6 flex items-center gap-3">
                       <div className="rounded-xl bg-cyan-500/10 p-2 text-cyan-300"><Activity /></div>
                       <div>
@@ -463,152 +476,92 @@ function App() {
                         </div>
                       </div>
                     )}
-                  </div>
+                </section>
 
-                  {/* Right sidebar: Authentication */}
-                  <div className="card p-5">
-                    <div className="mb-4 flex items-center gap-3">
-                      <div className="rounded-xl bg-cyan-500/10 p-2 text-cyan-300"><UserCircle2 size={18} /></div>
-                      <div>
-                        <h3 className="text-base font-semibold text-white">Account</h3>
-                        <p className="text-xs text-slate-400">Sign in to save scan history</p>
-                      </div>
+                <section className="space-y-5">
+                  <div className="flex items-end justify-between gap-4">
+                    <div>
+                      <p className="section-kicker">Live telemetry</p>
+                      <h2 className="mt-1 text-2xl font-semibold text-white">Security Overview</h2>
                     </div>
-
-                    {user ? (
-                      <div className="space-y-3">
-                        <div className="rounded-xl border border-slate-700 bg-slate-900/70 p-4">
-                          <p className="text-sm text-slate-300"><span className="text-slate-400">Name:</span> <span className="text-white">{user.name || 'User'}</span></p>
-                          <p className="mt-1 text-sm text-slate-300"><span className="text-slate-400">Email:</span> <span className="text-white">{user.email}</span></p>
-                          <p className="mt-1 text-sm text-slate-300"><span className="text-slate-400">Role:</span> <span className="text-white">{user.role}</span></p>
-                        </div>
-                        <button className="btn-secondary w-full" onClick={clearSession}>Logout</button>
-
-                        <div id="report-url" className="rounded-xl border border-slate-700 bg-slate-950/70 p-4">
-                          <div className="mb-4 flex items-center gap-3">
-                            <div className="rounded-xl bg-cyan-500/10 p-2 text-cyan-300"><FileText size={16} /></div>
-                            <div>
-                              <h3 className="text-base font-semibold text-white">Report URL</h3>
-                              <p className="text-xs text-slate-400">Submit a suspicious link for review.</p>
-                            </div>
+                    <span className="hidden items-center gap-2 text-xs text-slate-500 sm:flex"><span className="status-dot" /> Updated from connected scan data</span>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                    {[
+                      { label: 'URLs Scanned', value: totalScanned, icon: ScanLine, tone: 'cyan', detail: 'Total analysis requests' },
+                      { label: 'Phishing Detected', value: flaggedPhishing, icon: ShieldAlert, tone: 'rose', detail: 'High-risk URLs flagged' },
+                      { label: 'Safe URLs', value: verifiedSafe, icon: CheckCircle2, tone: 'emerald', detail: 'Low-risk destinations' },
+                      { label: 'Threats Blocked', value: threatsBlocked, icon: Lock, tone: 'amber', detail: 'Phishing and suspicious' },
+                    ].map(({ label, value, icon: Icon, tone, detail }) => (
+                      <div key={label} className="metric-card card p-5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm text-slate-400">{label}</p>
+                            <p className="mt-3 text-3xl font-bold tracking-tight text-white">{value}</p>
                           </div>
-
-                          <div className="space-y-3">
-                            <div>
-                              <label className="mb-1.5 block text-xs text-slate-300">URL</label>
-                              <input
-                                className="input"
-                                placeholder="https://example.com"
-                                value={reportUrl}
-                                onChange={(e) => setReportUrl(e.target.value)}
-                              />
-                            </div>
-                            <div>
-                              <label className="mb-1.5 block text-xs text-slate-300">Reason</label>
-                              <select
-                                className="input"
-                                value={reportReason}
-                                onChange={(e) => setReportReason(e.target.value)}
-                              >
-                                <option>Phishing</option>
-                                <option>Suspicious website</option>
-                                <option>Scam</option>
-                                <option>Malware</option>
-                                <option>Other</option>
-                              </select>
-                            </div>
-                            <div>
-                              <label className="mb-1.5 block text-xs text-slate-300">Description (optional)</label>
-                              <textarea
-                                className="input min-h-[88px] resize-none"
-                                placeholder="Add any additional details"
-                                value={reportDescription}
-                                onChange={(e) => setReportDescription(e.target.value)}
-                              />
-                            </div>
-                            <button className="btn-primary w-full" onClick={handleReport}>Submit Report</button>
-                          </div>
+                          <div className={`metric-icon metric-icon--${tone}`}><Icon size={19} /></div>
                         </div>
+                        <p className="mt-4 text-xs text-slate-500">{detail}</p>
                       </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="flex rounded-xl border border-slate-700 bg-slate-950/80 p-1">
-                          <button
-                            className={`flex-1 rounded-lg py-2 text-sm font-medium transition ${authMode === 'login' ? 'bg-cyan-500 text-slate-950' : 'text-slate-300 hover:text-white'}`}
-                            onClick={() => setAuthMode('login')}
-                          >
-                            Login
-                          </button>
-                          <button
-                            className={`flex-1 rounded-lg py-2 text-sm font-medium transition ${authMode === 'register' ? 'bg-cyan-500 text-slate-950' : 'text-slate-300 hover:text-white'}`}
-                            onClick={() => setAuthMode('register')}
-                          >
-                            Register
-                          </button>
-                        </div>
-
-                        <form onSubmit={handleAuth} className="space-y-3">
-                          {authMode === 'register' && (
-                            <input
-                              className="input"
-                              value={authForm.name}
-                              onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })}
-                              placeholder="Full name"
-                              required
-                            />
-                          )}
-                          <input
-                            className="input"
-                            type="email"
-                            value={authForm.email}
-                            onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })}
-                            placeholder="Email address"
-                            required
-                          />
-                          <input
-                            className="input"
-                            type="password"
-                            value={authForm.password}
-                            onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                            placeholder="Password"
-                            required
-                            minLength={6}
-                          />
-                          <button className="btn-primary w-full" type="submit">
-                            {authMode === 'login' ? 'Sign in' : 'Create account'}
-                          </button>
-                        </form>
-
-                        <p className="text-center text-xs text-slate-400">
-                          Demo admin: admin@college.edu / admin123
-                        </p>
-                      </div>
-                    )}
+                    ))}
                   </div>
                 </section>
 
-                {/* Statistics Cards */}
-                <section className="grid gap-6 md:grid-cols-3">
-                  <div className="card p-5">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-xl bg-cyan-500/10 p-2 text-cyan-300"><BarChart3 size={20} /></div>
-                      <p className="text-sm text-slate-400">Total Scanned</p>
+                <section className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
+                  <div>
+                    <p className="section-kicker">Layered defense</p>
+                    <h2 className="mt-1 text-2xl font-semibold text-white">How PhishSense Protects You</h2>
+                    <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                      {[
+                        { icon: SearchCheck, title: 'URL Analysis', text: 'Inspects structure, length, redirects, and patterns that often signal abuse.' },
+                        { icon: Bot, title: 'Machine Learning Detection', text: 'Scores each URL against learned phishing and legitimate URL behavior.' },
+                        { icon: Globe2, title: 'Domain & Reputation Check', text: 'Looks for suspicious domains, risky TLDs, IP addresses, and reputation signals.' },
+                        { icon: KeyRound, title: 'SSL/TLS Security Check', text: 'Checks HTTPS usage and certificate signals that support a safer destination.' },
+                      ].map(({ icon: Icon, title, text }) => (
+                        <div key={title} className="feature-card card p-5">
+                          <div className="feature-icon"><Icon size={19} /></div>
+                          <h3 className="mt-4 font-semibold text-white">{title}</h3>
+                          <p className="mt-2 text-sm leading-6 text-slate-400">{text}</p>
+                        </div>
+                      ))}
                     </div>
-                    <p className="mt-4 text-4xl font-bold text-white">{totalScanned}</p>
                   </div>
-                  <div className="card p-5">
+
+                  <div className="card p-5 xl:mt-8">
                     <div className="flex items-center gap-3">
-                      <div className="rounded-xl bg-rose-500/10 p-2 text-rose-300"><ShieldAlert size={20} /></div>
-                      <p className="text-sm text-slate-400">Flagged Phishing</p>
+                      <div className="feature-icon"><Network size={19} /></div>
+                      <div>
+                        <p className="section-kicker">Inspection layers</p>
+                        <h3 className="mt-1 text-lg font-semibold text-white">What We Check</h3>
+                      </div>
                     </div>
-                    <p className="mt-4 text-4xl font-bold text-white">{flaggedPhishing}</p>
+                    <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+                      {['URL structure', 'Domain reputation', 'SSL/TLS signals', 'Suspicious keywords', 'IP and domain information', 'ML risk score'].map((item) => (
+                        <div key={item} className="check-row"><Check size={15} /> <span>{item}</span></div>
+                      ))}
+                    </div>
                   </div>
-                  <div className="card p-5">
-                    <div className="flex items-center gap-3">
-                      <div className="rounded-xl bg-emerald-500/10 p-2 text-emerald-300"><CheckCircle2 size={20} /></div>
-                      <p className="text-sm text-slate-400">Verified Safe</p>
+                </section>
+
+                <section id="report-url" className="card report-panel p-5 md:p-6">
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+                    <div className="max-w-md">
+                      <div className="feature-icon"><FileText size={18} /></div>
+                      <p className="section-kicker mt-4">Community signal</p>
+                      <h2 className="mt-1 text-xl font-semibold text-white">Report a suspicious URL</h2>
+                      <p className="mt-2 text-sm leading-6 text-slate-400">Send a link for review and help strengthen the threat intelligence layer.</p>
                     </div>
-                    <p className="mt-4 text-4xl font-bold text-white">{verifiedSafe}</p>
+                    <div className="grid flex-1 gap-3 lg:max-w-3xl lg:grid-cols-[1.4fr_0.8fr_auto]">
+                      <input className="input" placeholder="https://example.com" value={reportUrl} onChange={(e) => setReportUrl(e.target.value)} aria-label="URL to report" />
+                      <select className="input" value={reportReason} onChange={(e) => setReportReason(e.target.value)} aria-label="Report reason">
+                        <option>Phishing</option>
+                        <option>Suspicious website</option>
+                        <option>Scam</option>
+                        <option>Malware</option>
+                        <option>Other</option>
+                      </select>
+                      <button className="btn-primary whitespace-nowrap" onClick={handleReport}>Submit Report</button>
+                    </div>
                   </div>
                 </section>
 
@@ -760,6 +713,17 @@ function App() {
                       required
                       minLength={6}
                     />
+                    {authMode === 'login' && (
+                      <label className="flex items-center gap-2 text-sm text-slate-300">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500/40"
+                          checked={rememberMe}
+                          onChange={(e) => setRememberMe(e.target.checked)}
+                        />
+                        Remember me
+                      </label>
+                    )}
                     <button className="btn-primary w-full" type="submit">
                       {authMode === 'login' ? 'Sign in' : 'Create account'}
                     </button>

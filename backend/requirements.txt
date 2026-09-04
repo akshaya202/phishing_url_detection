@@ -8,3 +8,5 @@ supabase==2.5.1
 python-jose==3.3.0
 passlib==1.4.2
 requests==2.32.2
+# Optional: enables XGBoost in the model comparison pipeline.
+# xgboost>=2.0.0
