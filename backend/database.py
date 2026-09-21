@@ -1,6 +1,5 @@
 import json
 import sqlite3
-from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -99,9 +98,6 @@ class Database:
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        conn.execute(
-            "INSERT OR IGNORE INTO users (id, name, email, password, role) VALUES (1, 'System Admin', 'admin@college.edu', 'admin123', 'admin')"
-        )
         conn.commit()
         conn.close()
 
@@ -166,39 +162,6 @@ class Database:
         conn.commit()
         conn.close()
         return cursor.lastrowid
-
-    def get_reports(self):
-        conn = self._connect()
-        rows = conn.execute('SELECT * FROM reports ORDER BY created_at DESC').fetchall()
-        conn.close()
-        return [dict(row) for row in rows]
-
-    def update_report_status(self, report_id, status, verified_by):
-        conn = self._connect()
-        conn.execute(
-            'UPDATE reports SET status = ?, verified_by = ?, verified_at = ? WHERE id = ?',
-            (status, verified_by, datetime.utcnow().isoformat(timespec='seconds') + 'Z', report_id),
-        )
-        conn.commit()
-        conn.close()
-
-    def add_threat_intelligence(self, url, source, verified_by):
-        conn = self._connect()
-        conn.execute(
-            'INSERT OR IGNORE INTO threat_intelligence (url, status, source, verified_by) VALUES (?, ?, ?, ?)',
-            (url, 'verified', source, verified_by),
-        )
-        conn.commit()
-        conn.close()
-
-    def get_verified_reports(self):
-        conn = self._connect()
-        rows = conn.execute(
-            'SELECT * FROM reports WHERE status = ? ORDER BY created_at DESC',
-            ('verified',),
-        ).fetchall()
-        conn.close()
-        return [dict(row) for row in rows]
 
     def save_model_version(self, version, accuracy, precision, recall, f1, confusion_matrix):
         conn = self._connect()

@@ -6,8 +6,7 @@ This project implements a full-stack phishing URL detection system with:
 - React + Tailwind frontend
 - FastAPI backend
 - Multi-dataset phishing detection with model comparison and retraining flow
-- User auth, scan history, suspicious URL reporting, and admin verification
-- **Admin dashboard** with system-wide analytics
+- User auth, scan history, suspicious URL reporting, and system-wide analytics
 
 ## Structure
 
@@ -19,8 +18,8 @@ This project implements a full-stack phishing URL detection system with:
 
 ## Multi-dataset ML pipeline
 
-Place URL CSV files in `datasets/`. On startup, and whenever an administrator uses
-the retrain action, every CSV is inspected and normalized to:
+Place URL CSV files in `datasets/`. On startup, every CSV is inspected and normalized
+to:
 
 ```text
 url      verdict
@@ -90,12 +89,9 @@ frontend and backend prediction behavior remains unchanged.
    npm run dev
    ```
 
-6. Open browser at `http://localhost:5173` and use credentials:
-   - **Email**: `admin@college.edu`
-   - **Password**: `admin123`
+6. Open browser at `http://localhost:5173`.
 
 ## Notes
 
 - Reported URLs are never visited or executed.
-- Only verified reports are used for retraining.
-- Admin routes are protected and require an admin token.
+- Report submissions are stored for later review.

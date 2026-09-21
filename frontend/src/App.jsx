@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Route, Routes, Navigate } from 'react-router-dom';
+import { Link, Route, Routes } from 'react-router-dom';
 import axios from 'axios';
-import { Activity, AlertTriangle, BarChart3, Bot, Check, CheckCircle2, FileText, Globe2, KeyRound, Lock, Network, ScanLine, SearchCheck, Shield, ShieldAlert, ShieldCheck, Settings, TriangleAlert, UserCircle2, ChartNoAxesCombined, X } from 'lucide-react';
-import { AreaChart, Area, BarChart, Bar, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Activity, AlertTriangle, BarChart3, Bot, Check, CheckCircle2, Eye, EyeOff, FileText, Globe2, KeyRound, Lock, Network, ScanLine, SearchCheck, Shield, ShieldAlert, Settings, TriangleAlert, UserCircle2, ChartNoAxesCombined, X } from 'lucide-react';
+import { BarChart, Bar, CartesianGrid, PieChart, Pie, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 const API_BASE = 'http://localhost:8000';
-const DEFAULT_ADMIN = { email: 'admin@college.edu', password: 'admin123' };
-
 const statusColors = {
   Legitimate: 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30',
   Phishing: 'bg-rose-500/15 text-rose-300 border border-rose-500/30',
@@ -128,13 +126,80 @@ const getRiskColor = (risk) => {
   return 'bg-emerald-500';
 };
 
+function SplashScreen({ isExiting }) {
+  const particles = [
+    { cx: '17%', cy: '34%', delay: '0.1s', size: 2 },
+    { cx: '27%', cy: '62%', delay: '0.8s', size: 1.5 },
+    { cx: '32%', cy: '25%', delay: '1.2s', size: 1.5 },
+    { cx: '72%', cy: '29%', delay: '0.4s', size: 2 },
+    { cx: '82%', cy: '48%', delay: '1.1s', size: 1.5 },
+    { cx: '73%', cy: '70%', delay: '0.7s', size: 2 },
+    { cx: '39%', cy: '79%', delay: '1.5s', size: 1.5 },
+    { cx: '61%', cy: '18%', delay: '0.2s', size: 1.5 },
+  ];
+
+  return (
+    <div className={`splash-screen${isExiting ? ' splash-screen--exiting' : ''}`} aria-label="Loading PhishSense" role="status">
+      <div className="splash-halo" />
+      <div className="splash-icon-shell">
+        <svg className="splash-art" viewBox="0 0 320 320" aria-hidden="true">
+          <defs>
+            <filter id="splash-glow" x="-80%" y="-80%" width="260%" height="260%">
+              <feGaussianBlur stdDeviation="5" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+            <linearGradient id="splash-shield-gradient" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#a5f3fc" />
+              <stop offset="0.45" stopColor="#22d3ee" />
+              <stop offset="1" stopColor="#0891b2" />
+            </linearGradient>
+          </defs>
+
+          <ellipse className="splash-energy-ring splash-energy-ring--outer" cx="160" cy="160" rx="107" ry="67" />
+          <ellipse className="splash-energy-ring splash-energy-ring--inner" cx="160" cy="160" rx="91" ry="119" />
+          <path
+            className="splash-shield"
+            d="M160 66 L229 92 V150 C229 197 200 232 160 254 C120 232 91 197 91 150 V92 Z"
+            fill="rgba(8, 145, 178, 0.12)"
+            stroke="url(#splash-shield-gradient)"
+            strokeWidth="5"
+            strokeLinejoin="round"
+            filter="url(#splash-glow)"
+          />
+          <path className="splash-shield-check" d="M126 158 L149 181 L197 130" fill="none" stroke="#b6f7ff" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+          {particles.map((particle) => (
+            <circle
+              key={`${particle.cx}-${particle.cy}`}
+              className="splash-particle"
+              cx={particle.cx}
+              cy={particle.cy}
+              r={particle.size}
+              style={{ animationDelay: particle.delay }}
+            />
+          ))}
+        </svg>
+      </div>
+      <p className="splash-label">PhishSense</p>
+      <span className="splash-status">SECURE URL INTELLIGENCE</span>
+    </div>
+  );
+}
+
 function App() {
+  const [showSplash, setShowSplash] = useState(true);
+  const [isSplashExiting, setIsSplashExiting] = useState(false);
   const [token, setToken] = useState(() => localStorage.getItem('token') || sessionStorage.getItem('token') || '');
   const [user, setUser] = useState(() => JSON.parse(localStorage.getItem('user') || sessionStorage.getItem('user') || 'null'));
   const [scanResult, setScanResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [authMode, setAuthMode] = useState('login');
-  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '' });
+  const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
   const [rememberMe, setRememberMe] = useState(() => localStorage.getItem('rememberMe') !== 'false');
   const [reportUrl, setReportUrl] = useState('');
   const [reportReason, setReportReason] = useState('Phishing');
@@ -152,7 +217,16 @@ function App() {
   });
 
   const isAuthenticated = Boolean(token && user);
-  const isAdmin = user?.role === 'admin';
+
+  useEffect(() => {
+    const exitTimer = setTimeout(() => setIsSplashExiting(true), 2400);
+    const completeTimer = setTimeout(() => setShowSplash(false), 2900);
+
+    return () => {
+      clearTimeout(exitTimer);
+      clearTimeout(completeTimer);
+    };
+  }, []);
 
   const clearSession = () => {
     localStorage.removeItem('token');
@@ -228,7 +302,7 @@ function App() {
   const fetchStats = async () => {
     if (!token) return;
     try {
-      const res = await axios.get(`${API_BASE}/api/admin/summary`, buildAuthHeader(token));
+      const res = await axios.get(`${API_BASE}/api/dashboard/summary`, buildAuthHeader(token));
       setStats(res.data);
     } catch (error) {
       console.error('Stats load failed', error);
@@ -238,8 +312,19 @@ function App() {
   const handleAuth = async (e) => {
     e.preventDefault();
 
+    if (authMode === 'register') {
+      if (!authForm.password || !authForm.confirmPassword) {
+        setPasswordError('Password and Confirm Password are required.');
+        return;
+      }
+      if (authForm.password !== authForm.confirmPassword) {
+        setPasswordError('Passwords do not match.');
+        return;
+      }
+    }
+
     const payload = authMode === 'register'
-      ? authForm
+      ? { name: authForm.name, email: authForm.email, password: authForm.password }
       : { email: authForm.email, password: authForm.password };
 
     try {
@@ -248,21 +333,10 @@ function App() {
       setToken(res.data.token);
       setUser(res.data.user);
       setRememberMe(authMode === 'register' ? true : rememberMe);
-      setAuthForm({ name: '', email: '', password: '' });
+      setAuthForm({ name: '', email: '', password: '', confirmPassword: '' });
+      setPasswordError('');
     } catch (error) {
       alert(error.response?.data?.detail || 'Authentication failed');
-    }
-  };
-
-  const handleDemoAdminLogin = async () => {
-    const payload = { email: DEFAULT_ADMIN.email, password: DEFAULT_ADMIN.password };
-    try {
-      const res = await axios.post(`${API_BASE}/api/auth/login`, payload);
-      setToken(res.data.token);
-      setUser(res.data.user);
-      setAuthForm({ name: '', email: '', password: '' });
-    } catch (error) {
-      alert('Demo admin login failed.');
     }
   };
 
@@ -333,27 +407,11 @@ function App() {
     }
   };
 
-  const adminSummary = useMemo(() => [
+  const threatDistribution = useMemo(() => [
     { name: 'Legitimate', value: stats.counts.legitimate },
     { name: 'Phishing', value: stats.counts.phishing },
     { name: 'Suspicious', value: stats.counts.suspicious },
   ], [stats]);
-
-  const scanSummary = useMemo(() => [
-    { name: 'Scans', value: history.length },
-    { name: 'Reports', value: stats.reports.total },
-    { name: 'Verified', value: stats.reports.verified },
-  ], [history.length, stats.reports]);
-
-  const reportTrend = useMemo(() => {
-    const base = stats.dailyScans.length ? stats.dailyScans : [{ day: 'today', scans: 0 }];
-    return base.map((entry) => ({
-      day: entry.day,
-      scans: entry.scans,
-      phishing: stats.counts.phishing || 0,
-      reports: stats.reports.total || 0,
-    }));
-  }, [stats]);
 
   const totalScanned = history.length;
   const flaggedPhishing = history.filter((h) => normalizePrediction(h.prediction) === 'phishing').length;
@@ -376,6 +434,10 @@ function App() {
   };
   const currentResultMeta = resultMeta[resultStatus] || resultMeta.safe;
 
+  if (showSplash) {
+    return <SplashScreen isExiting={isSplashExiting} />;
+  }
+
   return (
     <div className="min-h-screen text-slate-100">
       {/* Top Navigation Bar */}
@@ -392,7 +454,6 @@ function App() {
           <div className="hidden items-center gap-6 text-sm md:flex">
             <Link to="/" className="hover:text-white">Home</Link>
             {isAuthenticated && <a href="#report-url" className="hover:text-white">Report URL</a>}
-            {isAuthenticated && <Link to="/admin" className="hover:text-white">Admin</Link>}
           </div>
 
           <div className="flex items-center gap-3">
@@ -407,9 +468,7 @@ function App() {
                 </button>
                 <button className="btn-secondary" onClick={() => { setToken(''); setUser(null); }}>Logout</button>
               </>
-            ) : (
-              <button className="btn-primary" onClick={handleDemoAdminLogin}>Demo Admin</button>
-            )}
+            ) : null}
           </div>
         </div>
       </header>
@@ -586,8 +645,8 @@ function App() {
                     <div className="h-60">
                       <ResponsiveContainer width="100%" height="100%">
                         <PieChart>
-                          <Pie data={adminSummary} dataKey="value" nameKey="name" innerRadius={40} outerRadius={75} paddingAngle={4}>
-                            {adminSummary.map((entry, index) => <Cell key={entry.name} fill={pieColors[index % pieColors.length]} />)}
+                          <Pie data={threatDistribution} dataKey="value" nameKey="name" innerRadius={40} outerRadius={75} paddingAngle={4}>
+                            {threatDistribution.map((entry, index) => <Cell key={entry.name} fill={pieColors[index % pieColors.length]} />)}
                           </Pie>
                           <Tooltip />
                         </PieChart>
@@ -704,15 +763,60 @@ function App() {
                       placeholder="Email address"
                       required
                     />
-                    <input
-                      className="input"
-                      type="password"
-                      value={authForm.password}
-                      onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })}
-                      placeholder="Password"
-                      required
-                      minLength={6}
-                    />
+                    <div className="relative">
+                      <input
+                        className="input pr-12"
+                        type={showPassword ? 'text' : 'password'}
+                        value={authForm.password}
+                        onChange={(e) => {
+                          const password = e.target.value;
+                          setAuthForm((current) => ({ ...current, password }));
+                          if (authMode === 'register' && password && password === authForm.confirmPassword) {
+                            setPasswordError('');
+                          }
+                        }}
+                        placeholder="Password"
+                        required
+                        minLength={6}
+                      />
+                      <button
+                        type="button"
+                        className="absolute inset-y-0 right-0 flex items-center px-4 text-slate-400 transition hover:text-cyan-300"
+                        onClick={() => setShowPassword((visible) => !visible)}
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                    {authMode === 'register' && (
+                      <div className="relative">
+                        <input
+                          className="input pr-12"
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          value={authForm.confirmPassword}
+                          onChange={(e) => {
+                            const confirmPassword = e.target.value;
+                            setAuthForm((current) => ({ ...current, confirmPassword }));
+                            if (confirmPassword && confirmPassword === authForm.password) {
+                              setPasswordError('');
+                            }
+                          }}
+                          placeholder="Confirm Password"
+                          required
+                        />
+                        <button
+                          type="button"
+                          className="absolute inset-y-0 right-0 flex items-center px-4 text-slate-400 transition hover:text-cyan-300"
+                          onClick={() => setShowConfirmPassword((visible) => !visible)}
+                          aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                        >
+                          {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    )}
+                    {authMode === 'register' && passwordError && (
+                      <p className="text-sm text-rose-300" role="alert">{passwordError}</p>
+                    )}
                     {authMode === 'login' && (
                       <label className="flex items-center gap-2 text-sm text-slate-300">
                         <input
@@ -729,141 +833,12 @@ function App() {
                     </button>
                   </form>
 
-                  <p className="mt-5 text-center text-xs text-slate-400">
-                    Demo admin: admin@college.edu / admin123
-                  </p>
                 </div>
               </div>
-            )
-          } />
-
-          <Route path="/admin" element={
-            !isAuthenticated ? <Navigate to="/" replace /> : isAdmin ? (
-              <AdminDashboard stats={stats} fetchStats={fetchStats} token={token} />
-            ) : (
-              <ProtectedAdminMessage handleDemoAdminLogin={handleDemoAdminLogin} />
             )
           } />
         </Routes>
       </main>
-    </div>
-  );
-}
-
-function ProtectedAdminMessage({ handleDemoAdminLogin }) {
-  return (
-    <div className="card mx-auto max-w-xl p-8 text-center">
-      <ShieldCheck className="mx-auto mb-4 text-cyan-300" />
-      <h2 className="text-2xl font-bold text-white">Admin access required</h2>
-      <p className="mt-3 text-sm text-slate-300">Only verified administrators can view and approve suspicious URL reports.</p>
-      <button className="btn-primary mt-5" onClick={handleDemoAdminLogin}>Use demo admin account</button>
-    </div>
-  );
-}
-
-function AdminDashboard({ stats, token, fetchStats }) {
-  const [reports, setReports] = useState([]);
-  const [metrics, setMetrics] = useState({ accuracy: 0, precision: 0, recall: 0, f1: 0, confusion_matrix: [[0,0],[0,0]] });
-
-  const loadReports = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}/api/admin/reports`, buildAuthHeader(token));
-      setReports(res.data.reports || []);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const loadMetrics = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}/api/admin/metrics`, buildAuthHeader(token));
-      setMetrics(res.data);
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  useEffect(() => {
-    loadReports();
-    loadMetrics();
-  }, [token]);
-
-  const decision = async (reportId, status) => {
-    try {
-      await axios.post(`${API_BASE}/api/admin/reports/${reportId}/decision`, { status }, buildAuthHeader(token));
-      await loadReports();
-      await loadMetrics();
-      await fetchStats();
-    } catch (error) {
-      alert(error.response?.data?.detail || 'Could not update report');
-    }
-  };
-
-  const confusionMatrix = metrics.confusion_matrix || [[0, 0], [0, 0]];
-
-  return (
-    <div className="space-y-8">
-      <section className="grid gap-6 md:grid-cols-4">
-        <div className="card p-5"><p className="text-sm text-slate-400">Accuracy</p><p className="mt-3 text-3xl font-bold text-white">{Number(metrics.accuracy * 100 || 0).toFixed(2)}%</p></div>
-        <div className="card p-5"><p className="text-sm text-slate-400">Precision</p><p className="mt-3 text-3xl font-bold text-white">{Number(metrics.precision * 100 || 0).toFixed(2)}%</p></div>
-        <div className="card p-5"><p className="text-sm text-slate-400">Recall</p><p className="mt-3 text-3xl font-bold text-white">{Number(metrics.recall * 100 || 0).toFixed(2)}%</p></div>
-        <div className="card p-5"><p className="text-sm text-slate-400">F1-score</p><p className="mt-3 text-3xl font-bold text-white">{Number(metrics.f1 * 100 || 0).toFixed(2)}%</p></div>
-      </section>
-
-      <section className="grid gap-6 lg:grid-cols-[1fr_0.8fr]">
-        <div className="card p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-white">Verified reports</h3>
-            <span className="badge bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">{stats.reports.verified}</span>
-          </div>
-          <div className="space-y-3">
-            {reports.length === 0 ? <p className="text-sm text-slate-400">No reports awaiting review.</p> : reports.map((report) => (
-              <div key={report.id} className="rounded-xl border border-slate-700 bg-slate-900/70 p-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="font-medium text-white">{report.url}</p>
-                    <p className="text-xs text-slate-400">Status: {report.status} | {new Date(report.created_at).toLocaleString()}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button className="btn-primary" onClick={() => decision(report.id, 'verified')}>Verify</button>
-                    <button className="btn-secondary" onClick={() => decision(report.id, 'rejected')}>Reject</button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="card p-5">
-          <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-white"><CheckCircle2 size={18} /> Confusion matrix</h3>
-          <div className="rounded-xl border border-slate-700 bg-slate-900 p-4">
-            <div className="grid grid-cols-2 gap-2 text-center text-sm">
-              <div className="rounded-lg bg-slate-800 p-4 text-emerald-300">{confusionMatrix[0][0]}</div>
-              <div className="rounded-lg bg-slate-800 p-4 text-rose-300">{confusionMatrix[0][1]}</div>
-              <div className="rounded-lg bg-slate-800 p-4 text-amber-300">{confusionMatrix[1][0]}</div>
-              <div className="rounded-lg bg-slate-800 p-4 text-cyan-300">{confusionMatrix[1][1]}</div>
-            </div>
-            <p className="mt-4 text-xs text-slate-400">Matrix layout: [Actual Legitimate, Actual Phishing] x [Predicted Legitimate, Predicted Phishing]</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="card p-5">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-white">Retraining</h3>
-          <button className="btn-primary" onClick={async () => {
-            try {
-              const res = await axios.post(`${API_BASE}/api/admin/retrain`, {}, buildAuthHeader(token));
-              alert(`Retraining complete: ${res.data.message}`);
-              await loadMetrics();
-              await fetchStats();
-            } catch (error) {
-              alert(error.response?.data?.detail || 'Retraining failed');
-            }
-          }}>Retrain model</button>
-        </div>
-        <p className="text-sm text-slate-300">Only verified reports are merged into the training set; unverified reports are never auto-trained.</p>
-      </section>
     </div>
   );
 }

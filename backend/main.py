@@ -6,19 +6,17 @@ from typing import Optional
 from urllib.parse import urlparse
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
-import pandas as pd
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from backend.database import Database
-from ml.dataset_pipeline import load_all_datasets, split_training_and_external
-from ml.phishing_model import DATASETS_DIR, bootstrap_initial_model, load_latest_model, predict_label_and_reason
+from ml.phishing_model import bootstrap_initial_model, load_latest_model, predict_label_and_reason
 
 app = FastAPI(title='Dynamic Phishing URL Detection System')
 
@@ -48,7 +46,7 @@ def _safe_url(url: str):
 
 
 def _create_token(user):
-    payload = {'sub': user['email'], 'role': user['role'], 'user_id': user['id']}
+    payload = {'sub': user['email'], 'user_id': user['id']}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -62,13 +60,6 @@ def _decode_token(credentials: HTTPAuthorizationCredentials):
     user = db.get_user_by_email(payload.get('sub'))
     if not user:
         raise HTTPException(status_code=401, detail='User not found.')
-    return user
-
-
-def _require_admin(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    user = _decode_token(credentials)
-    if user.get('role') != 'admin':
-        raise HTTPException(status_code=403, detail='Admin access required.')
     return user
 
 
@@ -119,9 +110,9 @@ def register_user(payload: dict):
     if db.get_user_by_email(email):
         raise HTTPException(status_code=400, detail='Email already registered.')
 
-    user_id = db.create_user(name, email, password, role='user')
+    user_id = db.create_user(name, email, password)
     user = db.get_user_by_id(user_id)
-    return {'token': _create_token(user), 'user': {'id': user['id'], 'name': user['name'], 'email': user['email'], 'role': user['role']}}
+    return {'token': _create_token(user), 'user': {'id': user['id'], 'name': user['name'], 'email': user['email']}}
 
 
 @app.post('/api/auth/login')
@@ -131,7 +122,7 @@ def login_user(payload: dict):
     user = db.get_user_by_email(email)
     if not user or user['password'] != password:
         raise HTTPException(status_code=401, detail='Invalid email or password.')
-    return {'token': _create_token(user), 'user': {'id': user['id'], 'name': user['name'], 'email': user['email'], 'role': user['role']}}
+    return {'token': _create_token(user), 'user': {'id': user['id'], 'name': user['name'], 'email': user['email']}}
 
 
 @app.post('/api/scan')
@@ -179,37 +170,12 @@ def submit_report(payload: dict, credentials: HTTPAuthorizationCredentials = Dep
     reason = str(payload.get('reason') or 'Other').strip() or 'Other'
     description = str(payload.get('description') or '').strip()
     report_id = db.save_report(url, user['id'], reason=reason, description=description)
-    return {'id': report_id, 'status': 'pending', 'message': 'Your report has been submitted for admin verification.'}
+    return {'id': report_id, 'status': 'pending', 'message': 'Your report has been submitted.'}
 
 
-@app.get('/api/admin/reports')
-def list_reports(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    _require_admin(credentials)
-    return {'reports': db.get_reports()}
-
-
-@app.post('/api/admin/reports/{report_id}/decision')
-def decide_report(report_id: int, payload: dict, credentials: HTTPAuthorizationCredentials = Depends(security)):
-    user = _require_admin(credentials)
-    status = (payload.get('status') or '').strip().lower()
-    if status not in {'verified', 'rejected'}:
-        raise HTTPException(status_code=400, detail='Status must be either verified or rejected.')
-
-    report_rows = db.get_reports()
-    report = next((item for item in report_rows if item['id'] == report_id), None)
-    if not report:
-        raise HTTPException(status_code=404, detail='Report not found.')
-
-    db.update_report_status(report_id, status, user['id'])
-    if status == 'verified':
-        db.add_threat_intelligence(report['url'], 'crowdsourced', user['id'])
-
-    return {'status': status, 'message': f'Report marked as {status}.'}
-
-
-@app.get('/api/admin/summary')
-def admin_summary(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    _require_admin(credentials)
+@app.get('/api/dashboard/summary')
+def dashboard_summary(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    _require_user(credentials)
     report_summary, daily = db.get_summary_stats()
     counts = db.count_scan_distribution()
     metadata = _get_latest_metadata()
@@ -225,43 +191,6 @@ def admin_summary(credentials: HTTPAuthorizationCredentials = Depends(security))
         },
         'modelVersion': metadata['version'] if metadata else 'n/a',
     }
-
-
-@app.get('/api/admin/metrics')
-def admin_metrics(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    _require_admin(credentials)
-    metadata = _get_latest_metadata()
-    if not metadata:
-        return {'accuracy': 0, 'precision': 0, 'recall': 0, 'f1': 0, 'confusion_matrix': [[0, 0], [0, 0]]}
-    return {**metadata}
-
-
-@app.post('/api/admin/retrain')
-def admin_retrain(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    _require_admin(credentials)
-    combined, reports = load_all_datasets(DATASETS_DIR)
-    training, external, reports = split_training_and_external(combined, reports)
-    verified_reports = db.get_verified_reports()
-
-    if verified_reports:
-        verified_df = pd.DataFrame([
-            {'url': item['url'], 'verdict': 1} for item in verified_reports
-        ])
-        training = pd.concat([training, verified_df], ignore_index=True)
-
-    from ml.phishing_model import train_and_evaluate_model, get_next_model_version, save_model_version
-
-    model, metrics = train_and_evaluate_model(training, external)
-    metrics['dataset_reports'] = reports
-    metrics['combined_records'] = int(len(combined))
-    metrics['combined_class_distribution'] = {
-        'legitimate': int((combined['verdict'] == 0).sum()),
-        'phishing': int((combined['verdict'] == 1).sum()),
-    }
-    version = get_next_model_version()
-    metadata = save_model_version(model, metrics, version)
-    db.save_model_version(metadata['version'], metadata['accuracy'], metadata['precision'], metadata['recall'], metadata['f1'], metadata['confusion_matrix'])
-    return {'message': f'Model retrained successfully as {metadata["version"]}.', 'version': metadata['version'], 'metrics': metadata}
 
 
 def _get_latest_metadata():
